@@ -36,25 +36,6 @@ pub(crate) fn draw_inline_backgrounds<'a>(
                 continue;
             };
 
-            let node_id = glyph_run.style().brush.id;
-            if node_id == inline_root_id {
-                continue;
-            }
-
-            let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles()) else {
-                continue;
-            };
-
-            let current_color = styles.clone_color();
-            let bg_color = styles
-                .get_background()
-                .background_color
-                .resolve_to_absolute(&current_color)
-                .as_srgb_color();
-            if bg_color == Color::TRANSPARENT {
-                continue;
-            }
-
             let metrics = glyph_run.run().font_metrics();
             let x = glyph_run.offset() as f64;
             let w = glyph_run.advance() as f64;
@@ -63,7 +44,45 @@ pub(crate) fn draw_inline_backgrounds<'a>(
             let y1 = baseline + metrics.descent as f64;
             let rect = Rect::new(x, y0, x + w, y1);
 
-            scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
+            // The run's own element and every inline element around it up to
+            // the inline root, outermost first: `<span class="hl"><b>x</b></span>`
+            // paints the span's background behind the bold text too.
+            // The walk stops at the inline root, or at the first box that is
+            // not inline (the element around an anonymous inline root).
+            let mut chain = Vec::new();
+            let mut node_id = glyph_run.style().brush.id;
+            while node_id != inline_root_id {
+                let Some(node) = doc.get_node(node_id) else {
+                    break;
+                };
+                if node.primary_styles().is_some_and(|styles| {
+                    styles.clone_display().outside()
+                        != style::values::specified::box_::DisplayOutside::Inline
+                }) {
+                    break;
+                }
+                chain.push(node_id);
+                match node.parent {
+                    Some(parent) => node_id = parent,
+                    None => break,
+                }
+            }
+            for &node_id in chain.iter().rev() {
+                let Some(styles) = doc.get_node(node_id).and_then(|node| node.primary_styles())
+                else {
+                    continue;
+                };
+                let current_color = styles.clone_color();
+                let bg_color = styles
+                    .get_background()
+                    .background_color
+                    .resolve_to_absolute(&current_color)
+                    .as_srgb_color();
+                if bg_color == Color::TRANSPARENT {
+                    continue;
+                }
+                scene.fill(Fill::NonZero, transform, bg_color, None, &rect);
+            }
         }
     }
 }
