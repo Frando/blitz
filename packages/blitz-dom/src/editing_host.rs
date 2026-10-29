@@ -23,6 +23,14 @@ use crate::{BaseDocument, LayoutOffset};
 /// Set it on an element with [`BaseDocument::set_editing_host`]. The element
 /// needs to be focusable (for example with `tabindex`) to get key events.
 pub trait EditingHost {
+    /// The behavior was set on its element. Mount the initial content here.
+    ///
+    /// Dioxus sets the behavior while it creates the element, so the
+    /// element may not be in the document yet.
+    fn attached(&mut self, cx: EditingCx<'_>) {
+        let _ = cx;
+    }
+
     /// Handles an event targeted at the host or a node inside it.
     ///
     /// Runs as the event's default action. Returns `true` if the host handled
@@ -60,6 +68,7 @@ impl BaseDocument {
     /// Replaces an earlier host of the node.
     pub fn set_editing_host(&mut self, node_id: NodeId, host: Box<dyn EditingHost>) {
         self.editing_hosts.insert(node_id, Some(host));
+        self.with_editing_host(node_id, |behavior, cx| behavior.attached(cx));
         if self
             .focus_node_id
             .is_some_and(|id| self.editing_host_of(id) == Some(node_id))
