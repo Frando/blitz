@@ -43,6 +43,7 @@ mod config;
 /// CSSOM stylesheet access (`document.styleSheets`, `CSSStyleSheet`, `CSSRule`)
 mod cssom;
 mod debug;
+mod dom_point;
 mod events;
 mod font_metrics;
 mod form;
@@ -97,6 +98,7 @@ pub use config::{DocumentConfig, StyleThreading};
 pub use document::{
     BaseDocument, BoundingRect, DocGuard, DocGuardMut, Document, PlainDocument, UserAgentStylesheet,
 };
+pub use dom_point::{DomPoint, LayoutOffset};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
     namespace_prefix, namespace_url, ns,
