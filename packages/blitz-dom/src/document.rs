@@ -403,6 +403,9 @@ pub struct BaseDocument {
     /// Editing hosts by element. The behavior is `None` while one of its
     /// callbacks runs.
     pub(crate) editing_hosts: HashMap<NodeId, Option<Box<dyn crate::EditingHost>>>,
+    /// When the caret of the focused editing host last moved. The caret
+    /// blinks from here (see [`crate::CARET_BLINK_PHASE`]).
+    pub(crate) caret_moved_at: Instant,
 
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
@@ -550,6 +553,7 @@ impl BaseDocument {
             iframe_loads: HashMap::new(),
 
             editing_hosts: HashMap::new(),
+            caret_moved_at: Instant::now(),
 
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
@@ -691,7 +695,10 @@ impl BaseDocument {
         mut dispatch_event: F,
     ) {
         let selection = self.text_selection.clone();
-        if !self.dispatch_to_editing_host(event) {
+        if self.dispatch_to_editing_host(event) {
+            // An edit restarts the blink, as in browsers.
+            self.caret_moved_at = Instant::now();
+        } else {
             handle_dom_event(self, event, &mut dispatch_event);
             // A press in an editing host focuses the host, as in a
             // `contenteditable` element.
@@ -1069,6 +1076,9 @@ impl BaseDocument {
         let mut node = self.remove_node_from_tree(node_id);
         if let Some(node) = &mut node {
             on_drop(node_id);
+            // Also hosts dropped with an ancestor, which
+            // `clear_interaction_state_for_removed_node` does not see.
+            self.editing_hosts.remove(&node_id);
             if let Some(before) = node.before() {
                 self.drop_node_ignoring_parent_with(before, on_drop);
             }
@@ -1849,6 +1859,7 @@ impl BaseDocument {
         let old_host = self.focused_editing_host();
         self.focus_node_id = Some(focus_node_id);
         if self.focused_editing_host().is_some() {
+            self.caret_moved_at = Instant::now();
             self.shell_provider.set_ime_enabled(true);
         } else if old_host.is_some()
             && self.nodes[focus_node_id]
@@ -2216,6 +2227,7 @@ impl BaseDocument {
             | custom_widget_is_animating
             | (self.scroll_animation != ScrollAnimationState::None)
             | self.scrollbars_animating()
+            | self.editing_caret_blinking()
     }
 
     /// Record pending [`DeviceChanges`] and request a redraw so that they are

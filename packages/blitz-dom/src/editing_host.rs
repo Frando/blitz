@@ -11,18 +11,32 @@
 //! - pasted text goes to the focused host,
 //! - the host learns when the native text selection changed (the DOM's
 //!   `selectionchange`),
-//! - a collapsed selection inside the focused host is painted as a caret.
+//! - a collapsed selection inside the focused host is painted as a blinking
+//!   caret, clipped like the text it stands in.
+
+use std::any::Any;
+use std::time::Duration;
 
 use blitz_traits::events::DomEvent;
 use blitz_traits::node_id::NodeId;
+use web_time::Instant;
 
 use crate::{BaseDocument, LayoutOffset};
+
+/// How long the caret is shown, and then hidden, while it blinks.
+pub const CARET_BLINK_PHASE: Duration = Duration::from_millis(500);
+
+/// How long the caret blinks after it last moved. Then it stays on, so an
+/// idle editor does not redraw (GTK's `gtk-cursor-blink-timeout`).
+pub const CARET_BLINK_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The behavior of an editing host.
 ///
 /// Set it on an element with [`BaseDocument::set_editing_host`]. The element
 /// needs to be focusable (for example with `tabindex`) to get key events.
-pub trait EditingHost {
+/// The application reaches its own host type with
+/// [`BaseDocument::with_editing_host_as`].
+pub trait EditingHost: Any {
     /// The behavior was set on its element. Mount the initial content here.
     ///
     /// Dioxus sets the behavior while it creates the element, so the
@@ -121,17 +135,55 @@ impl BaseDocument {
         ))
     }
 
-    /// Returns the caret rectangle to paint, in page coordinates (CSS px).
+    /// Returns the caret of the focused editing host.
     ///
     /// There is a caret when the native text selection is collapsed and lies
     /// in the focused editing host.
-    pub fn editing_caret_rect(&self) -> Option<kurbo::Rect> {
+    pub fn editing_caret(&self) -> Option<LayoutOffset> {
         let host = self.focused_editing_host()?;
         let (anchor, focus) = self.text_selection_offsets()?;
         if anchor != focus || self.editing_host_of(focus.inline_root) != Some(host) {
             return None;
         }
-        self.caret_rect(focus)
+        Some(focus)
+    }
+
+    /// Returns the rectangle of the [caret](Self::editing_caret), in page
+    /// coordinates (CSS px).
+    pub fn editing_caret_rect(&self) -> Option<kurbo::Rect> {
+        self.caret_rect(self.editing_caret()?)
+    }
+
+    /// Returns whether the caret is in the visible phase of its blink.
+    pub fn editing_caret_visible(&self) -> bool {
+        caret_visible_after(self.caret_moved_at.elapsed())
+    }
+
+    /// Returns whether the caret still blinks, which needs redraws.
+    pub(crate) fn editing_caret_blinking(&self) -> bool {
+        self.caret_moved_at.elapsed() < CARET_BLINK_TIMEOUT && self.editing_caret().is_some()
+    }
+
+    /// Runs `f` with the behavior of `host` if it is a `T`.
+    ///
+    /// This is how the application reaches its editor, for example to run
+    /// a toolbar command. Returns `None` if `host` has no behavior of type
+    /// `T`, or if the behavior is running already. Afterwards the host
+    /// learns about a changed native selection, as after an event.
+    pub fn with_editing_host_as<T: EditingHost, R>(
+        &mut self,
+        host: NodeId,
+        f: impl FnOnce(&mut T, EditingCx<'_>) -> R,
+    ) -> Option<R> {
+        let selection = self.text_selection.clone();
+        let result = self
+            .with_editing_host(host, |behavior, cx| {
+                let behavior: &mut dyn Any = behavior;
+                behavior.downcast_mut::<T>().map(|behavior| f(behavior, cx))
+            })
+            .flatten();
+        self.notify_selection_change(&selection);
+        result
     }
 
     /// Runs `f` with the host behavior of `host` taken out of the document.
@@ -173,6 +225,7 @@ impl BaseDocument {
         let Some(host) = self.focused_editing_host() else {
             return;
         };
+        self.caret_moved_at = Instant::now();
         if let Some(rect) = self.editing_caret_rect() {
             self.shell_provider.set_ime_cursor_area(
                 rect.x0 as f32,
@@ -184,4 +237,11 @@ impl BaseDocument {
         self.shell_provider.request_redraw();
         self.with_editing_host(host, |behavior, cx| behavior.selection_changed(cx));
     }
+}
+
+/// Returns whether a caret that moved `elapsed` ago is shown: on and off
+/// in [`CARET_BLINK_PHASE`]s, then on after [`CARET_BLINK_TIMEOUT`].
+pub fn caret_visible_after(elapsed: Duration) -> bool {
+    elapsed >= CARET_BLINK_TIMEOUT
+        || (elapsed.as_millis() / CARET_BLINK_PHASE.as_millis()).is_multiple_of(2)
 }

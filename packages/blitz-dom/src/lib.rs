@@ -100,7 +100,9 @@ pub use document::{
     BaseDocument, BoundingRect, DocGuard, DocGuardMut, Document, PlainDocument, UserAgentStylesheet,
 };
 pub use dom_point::{DomPoint, LayoutOffset};
-pub use editing_host::{EditingCx, EditingHost};
+pub use editing_host::{
+    CARET_BLINK_PHASE, CARET_BLINK_TIMEOUT, EditingCx, EditingHost, caret_visible_after,
+};
 pub use markup5ever::{
     LocalName, Namespace, NamespaceStaticSet, Prefix, PrefixStaticSet, QualName, local_name,
     namespace_prefix, namespace_url, ns,

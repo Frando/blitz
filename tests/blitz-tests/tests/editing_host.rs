@@ -309,3 +309,61 @@ fn a_dioxus_attribute_makes_an_editing_host() {
     assert_eq!(doc.focused_editing_host(), Some(host));
     assert!(doc.editing_caret_rect().is_some());
 }
+
+#[test]
+fn the_caret_blinks_until_it_rests() {
+    use blitz_dom::{CARET_BLINK_PHASE, CARET_BLINK_TIMEOUT, caret_visible_after};
+    use std::time::Duration;
+
+    let Setup { mut doc, text, .. } = setup();
+    let p = doc.get_node(text).unwrap().parent.unwrap();
+    assert!(!doc.is_animating());
+    click_at_offset(
+        &mut doc,
+        LayoutOffset {
+            inline_root: p,
+            offset: 2,
+        },
+    );
+    // A caret that just moved is shown and needs redraws to blink.
+    assert!(doc.editing_caret_visible());
+    assert!(doc.is_animating());
+
+    let ms = Duration::from_millis;
+    assert!(caret_visible_after(ms(0)));
+    assert!(!caret_visible_after(CARET_BLINK_PHASE + ms(1)));
+    assert!(caret_visible_after(CARET_BLINK_PHASE * 2 + ms(1)));
+    assert!(caret_visible_after(CARET_BLINK_TIMEOUT + CARET_BLINK_PHASE));
+}
+
+#[test]
+fn the_application_reaches_its_host_by_type() {
+    let Setup {
+        mut doc, host, log, ..
+    } = setup();
+    let changes = doc.with_editing_host_as::<TinyEditor, _>(host, |editor, _cx| {
+        editor.log.borrow().selection_changes
+    });
+    assert_eq!(changes, Some(0));
+    assert!(doc
+        .with_editing_host_as::<Plain, _>(host, |_, _| ())
+        .is_none());
+    assert_eq!(log.borrow().selection_changes, 0);
+}
+
+#[test]
+fn a_host_dropped_with_its_parent_is_gone() {
+    let Setup { mut doc, host, .. } = setup();
+    let body = doc.get_node(host).unwrap().parent.unwrap();
+    let mut m = doc.mutate();
+    let wrapper = m.create_element(
+        blitz_dom::QualName::new(None, blitz_dom::ns!(html), blitz_dom::local_name!("div")),
+        Vec::new(),
+    );
+    m.append_children(body, &[wrapper]);
+    m.remove_node(host);
+    m.append_children(wrapper, &[host]);
+    m.remove_and_drop_node(wrapper);
+    drop(m);
+    assert_eq!(doc.editing_host_of(host), None);
+}
