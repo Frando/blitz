@@ -2,7 +2,7 @@
 use crate::{
     NodeId, mutation_buffer::MutationBuffer, qual_name, trace, write_once_attr::WriteOnceAttr,
 };
-use blitz_dom::{BaseDocument, Document, DocumentMutator, Widget};
+use blitz_dom::{BaseDocument, Document, DocumentMutator, EditingHost, Widget};
 use blitz_traits::events::DomEventKind;
 use dioxus_core::{BorrowedAttributeValue, ElementId, WriteMutations};
 use std::str::FromStr as _;
@@ -435,6 +435,22 @@ impl BlitzBackend<'_> {
                     }
                 }
                 _ => self.docm.remove_sub_document(node_id),
+            }
+        }
+
+        // Set/unset the editing host of an element with `__editing_host`
+        if local_name == "__editing_host" {
+            match value {
+                BorrowedAttributeValue::Any(value) => {
+                    if let Some(value) = value
+                        .as_any()
+                        .downcast_ref::<WriteOnceAttr<Box<dyn EditingHost>>>()
+                        && let Some(host) = value.take()
+                    {
+                        self.docm.set_editing_host(node_id, host);
+                    }
+                }
+                _ => self.docm.remove_editing_host(node_id),
             }
         }
 

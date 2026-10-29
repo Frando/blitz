@@ -400,6 +400,10 @@ pub struct BaseDocument {
     /// Set of changed nodes for updating the accessibility tree
     pub(crate) deferred_construction_nodes: Vec<ConstructionTask>,
 
+    /// Editing hosts by element. The behavior is `None` while one of its
+    /// callbacks runs.
+    pub(crate) editing_hosts: HashMap<NodeId, Option<Box<dyn crate::EditingHost>>>,
+
     /// Nodes that contain custom widgets
     #[cfg(feature = "custom-widget")]
     pub(crate) custom_widget_nodes: HashSet<NodeId>,
@@ -545,6 +549,8 @@ impl BaseDocument {
             sub_document_nodes: HashSet::new(),
             iframe_loads: HashMap::new(),
 
+            editing_hosts: HashMap::new(),
+
             #[cfg(feature = "custom-widget")]
             custom_widget_nodes: HashSet::new(),
             #[cfg(feature = "custom-widget")]
@@ -682,9 +688,26 @@ impl BaseDocument {
     pub fn handle_dom_event<F: FnMut(DomEvent)>(
         &mut self,
         event: &mut DomEvent,
-        dispatch_event: F,
+        mut dispatch_event: F,
     ) {
-        handle_dom_event(self, event, dispatch_event)
+        let selection = self.text_selection.clone();
+        if !self.dispatch_to_editing_host(event) {
+            handle_dom_event(self, event, &mut dispatch_event);
+            // A press in an editing host focuses the host, as in a
+            // `contenteditable` element.
+            if let (blitz_traits::events::DomEventData::PointerDown(_), Some(host)) =
+                (&event.data, self.editing_host_of(event.target))
+            {
+                crate::events::generate_focus_events(
+                    self,
+                    &mut |doc| {
+                        doc.set_focus_to(host);
+                    },
+                    &mut dispatch_event,
+                );
+            }
+        }
+        self.notify_selection_change(&selection);
     }
 
     pub fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -968,6 +991,13 @@ impl BaseDocument {
     pub(crate) fn clear_interaction_state_for_removed_node(&mut self, node_id: NodeId) {
         if !self.nodes.contains_key(node_id) {
             return;
+        }
+        if self.editing_hosts.remove(&node_id).is_some()
+            && self
+                .focus_node_id
+                .is_some_and(|id| self.editing_host_of(id).is_none())
+        {
+            self.shell_provider.set_ime_enabled(false);
         }
 
         if self.hover_node_id == Some(node_id) {
@@ -1816,7 +1846,18 @@ impl BaseDocument {
             });
         }
 
+        let old_host = self.focused_editing_host();
         self.focus_node_id = Some(focus_node_id);
+        if self.focused_editing_host().is_some() {
+            self.shell_provider.set_ime_enabled(true);
+        } else if old_host.is_some()
+            && self.nodes[focus_node_id]
+                .element_data()
+                .and_then(|element| element.text_input_data())
+                .is_none()
+        {
+            self.shell_provider.set_ime_enabled(false);
+        }
 
         // The focus is styled (:focus, :focus-visible, :focus-within), so
         // moving it changes what is on screen. Nothing else asks for the
@@ -2708,7 +2749,7 @@ impl BaseDocument {
     }
 
     /// Find the Nth anonymous block under a parent.
-    fn find_anonymous_block_by_index(
+    pub(crate) fn find_anonymous_block_by_index(
         &self,
         parent_id: NodeId,
         target_index: usize,

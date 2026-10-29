@@ -623,6 +623,19 @@ pub(crate) fn handle_click(
     let mut maybe_node_id = Some(target);
     let matched = 'matched: {
         while let Some(node_id) = maybe_node_id {
+            // A click in an editing host focuses the host, as in a
+            // `contenteditable` element.
+            if doc.editing_hosts.contains_key(&node_id) {
+                generate_focus_events(
+                    doc,
+                    &mut |doc| {
+                        doc.set_focus_to(node_id);
+                    },
+                    dispatch_event,
+                );
+                break 'matched true;
+            }
+
             let maybe_element = {
                 let node = &mut doc.nodes[node_id];
                 node.data.downcast_element_mut()

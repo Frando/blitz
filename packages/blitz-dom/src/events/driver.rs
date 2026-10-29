@@ -288,12 +288,20 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
                 self.handle_dom_event(DomEvent::new(target, DomEventData::Ime(data)))
             }
             UiEvent::Paste(text) => {
-                super::ime::handle_ime_event(
-                    &mut self.doc.inner_mut(),
-                    blitz_traits::events::BlitzImeEvent::Commit(text),
-                    |event| self.queue.push_back(event),
-                );
-                self.process_queue();
+                let host = self.doc.inner().focused_editing_host();
+                if let Some(host) = host {
+                    let mut doc = self.doc.inner_mut();
+                    let selection = doc.text_selection.clone();
+                    doc.with_editing_host(host, |behavior, cx| behavior.paste(text, cx));
+                    doc.notify_selection_change(&selection);
+                } else {
+                    super::ime::handle_ime_event(
+                        &mut self.doc.inner_mut(),
+                        blitz_traits::events::BlitzImeEvent::Commit(text),
+                        |event| self.queue.push_back(event),
+                    );
+                    self.process_queue();
+                }
             }
             UiEvent::AppleStandardKeybinding(data) => {
                 let mut dom_event =

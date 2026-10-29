@@ -17,7 +17,7 @@ mod write_once_attr;
 pub use blitz_dom::DocumentConfig;
 pub use dioxus_document::DioxusDocument;
 pub use events::{NodeHandle, synthetic_click_event, synthetic_form_event};
-pub use write_once_attr::{CustomWidgetAttr, SubDocumentAttr};
+pub use write_once_attr::{CustomWidgetAttr, EditingHostAttr, SubDocumentAttr};
 
 pub use blitz_dom::NodeId;
 use blitz_dom::{LocalName, Namespace, QualName, ns};

@@ -514,6 +514,16 @@ impl DocumentMutator<'_> {
         self.mutations_occurred |= node_is_in_document;
     }
 
+    /// Makes `node_id` an editing host ([`BaseDocument::set_editing_host`]).
+    pub fn set_editing_host(&mut self, node_id: NodeId, host: Box<dyn crate::EditingHost>) {
+        self.doc.set_editing_host(node_id, host);
+    }
+
+    /// Removes the editing host behavior of `node_id`.
+    pub fn remove_editing_host(&mut self, node_id: NodeId) {
+        self.doc.remove_editing_host(node_id);
+    }
+
     #[cfg(feature = "custom-widget")]
     pub fn set_custom_widget(&mut self, node_id: NodeId, widget: Box<dyn crate::Widget>) {
         let node_is_in_document = self.doc.nodes[node_id].flags.is_in_document();

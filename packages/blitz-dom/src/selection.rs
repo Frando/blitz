@@ -11,7 +11,7 @@ use blitz_traits::node_id::NodeId;
 /// For regular nodes, `node_or_parent` contains the node ID directly.
 /// For anonymous blocks, `node_or_parent` contains the parent ID and
 /// `sibling_index` contains the index among anonymous siblings.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SelectionEndpoint {
     /// For regular nodes: the node ID directly.
     /// For anonymous blocks: the parent ID (requires lookup via sibling_index).
@@ -77,7 +77,7 @@ impl SelectionEndpoint {
 /// Tracks both the anchor (where selection started) and focus (where it currently ends).
 /// For anonymous blocks, we store stable parent references since anonymous block IDs
 /// can change during layout reconstruction.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TextSelection {
     /// The anchor point (where selection started via mousedown)
     pub anchor: SelectionEndpoint,

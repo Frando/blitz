@@ -173,6 +173,45 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
     /// Draw the current tree to current render surface
     /// Eventually we'll want the surface itself to be passed into the render function, along with things like the viewport
     ///
+    /// Draws the caret of the focused editing host, if it has one.
+    ///
+    /// The caret has the host's `caret-color`, else its text color, and is
+    /// 1.5 CSS px wide.
+    fn draw_editing_caret(
+        &self,
+        scene: &mut impl PaintScene,
+        viewport_scroll: blitz_dom::util::Point<f64>,
+    ) {
+        let dom = self.dom;
+        let Some(rect) = dom.editing_caret_rect() else {
+            return;
+        };
+        let Some(style) = dom
+            .focused_editing_host()
+            .and_then(|host| dom.get_node(host))
+            .and_then(|host| host.primary_styles())
+        else {
+            return;
+        };
+        let color = style.clone_color();
+        let caret_color = match &style.get_inherited_ui().caret_color.0 {
+            ColorOrAuto::Auto => color,
+            ColorOrAuto::Color(caret_color) => caret_color.resolve_to_absolute(&color),
+        };
+        let transform = Affine::translate(Vec2 {
+            x: self.initial_x - (viewport_scroll.x * self.scale),
+            y: self.initial_y - (viewport_scroll.y * self.scale),
+        }) * Affine::scale(self.scale);
+        let caret = Rect::new(rect.x0, rect.y0, rect.x0 + 1.5, rect.y1);
+        scene.fill(
+            Fill::NonZero,
+            transform,
+            caret_color.as_srgb_color(),
+            None,
+            &caret,
+        );
+    }
+
     /// This assumes styles are resolved and layout is complete.
     /// Make sure you do those before trying to render
     pub fn paint_scene(&self, scene: &mut impl PaintScene) {
@@ -246,6 +285,9 @@ impl<'dom, 'a> BlitzDomPainter<'dom, 'a> {
             }),
             viewport_clip_rect,
         );
+
+        // The caret of the focused editing host goes on top of the content.
+        self.draw_editing_caret(scene, viewport_scroll);
 
         // Render debug overlay
         if self.dom.devtools().highlight_hover {

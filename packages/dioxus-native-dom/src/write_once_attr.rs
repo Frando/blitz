@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize};
 
-use blitz_dom::{Document, Widget};
+use blitz_dom::{Document, EditingHost, Widget};
 use dioxus_core::{AttributeValue, IntoAttributeValue};
 
 #[derive(Clone, PartialEq)]
@@ -34,6 +34,28 @@ impl CustomWidgetAttr {
 }
 
 impl IntoAttributeValue for CustomWidgetAttr {
+    fn into_value(self) -> AttributeValue {
+        AttributeValue::Any(Rc::new(self.0))
+    }
+}
+
+/// An [`EditingHost`] for the `__editing_host` attribute of an element.
+///
+/// The element becomes an editing host: Blitz gives the events of its
+/// subtree to `host` as their default action.
+#[derive(Clone, PartialEq)]
+pub struct EditingHostAttr(WriteOnceAttr<Box<dyn EditingHost>>);
+
+impl EditingHostAttr {
+    /// Wraps `host` for the attribute.
+    pub fn new<T: EditingHost + 'static>(host: T) -> Self {
+        let id = ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let boxed = Box::new(host) as Box<dyn EditingHost>;
+        Self(WriteOnceAttr::new(id, boxed))
+    }
+}
+
+impl IntoAttributeValue for EditingHostAttr {
     fn into_value(self) -> AttributeValue {
         AttributeValue::Any(Rc::new(self.0))
     }
